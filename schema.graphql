@@ -1,0 +1,14 @@
+type Query {
+    fitApplyFourierCorrection (
+        actual: [Float!]!
+        predicted_targets: [Float!]!
+        positions_day_number: [Int]!
+    ): fitApplyFourierCorrectionResponse!
+}
+
+type fitApplyFourierCorrectionResponse {
+    success: Boolean,
+    error: String,
+    correction_factors: [Float]
+    corrected_targets: [Float]
+}
