@@ -51,16 +51,28 @@ def extract_fft_features(signal, top_n_percent=80):
 
     return features, fft_values, sorted_indices[:top_n]  # also returns all fft values with top indices
 
+# def reconstruct_signal_from_fft(original_fft, top_indices, n_future=1):
+#     n = len(original_fft)  
+#     t = np.arange(n + n_future) # extend time for predicting
+
+#     reconstructed_signal = np.zeros_like(t, dtype=float)
+#     for index in top_indices:
+#         freq = index / n
+#         amplitude = np.abs(original_fft[index]) / n
+#         phase = np.angle(original_fft[index])
+
+#         reconstructed_signal += amplitude * np.cos(2 * np.pi * freq * t + phase) # x(t)=Acos(2πft+ϕ)
+
+#     return reconstructed_signal[-n_future:] 
+
 def reconstruct_signal_from_fft(original_fft, top_indices, n_future=1):
-    n = len(original_fft)  
-    t = np.arange(n + n_future) # extend time for predicting
+    n = len(original_fft)
+    extended_fft = np.zeros(n + n_future, dtype=complex)
+    extended_fft[:n] = original_fft  # Copy original FFT coefficients
 
-    reconstructed_signal = np.zeros_like(t, dtype=float)
-    for index in top_indices:
-        freq = index / n
-        amplitude = np.abs(original_fft[index]) / n
-        phase = np.angle(original_fft[index])
+    # Reconstruct the signal using IFFT
+    reconstructed_signal = np.fft.ifft(extended_fft)
+    # print("reconstructed signal : ", reconstructed_signal)
+    # print("len reconstructed signal : ",len(reconstructed_signal))
 
-        reconstructed_signal += amplitude * np.cos(2 * np.pi * freq * t + phase) # x(t)=Acos(2πft+ϕ)
-
-    return reconstructed_signal[-n_future:] 
+    return reconstructed_signal[-n_future:]  # Return extrapolated values

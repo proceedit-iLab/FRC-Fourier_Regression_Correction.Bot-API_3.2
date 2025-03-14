@@ -107,12 +107,13 @@ connection_params = {
 dataset_start_date = '2020-01-01' #for TSLA
 case = 'TSLA'
 
-dohlcav_mpnxp_data = pd.read_csv('/lrn/fft-analysis/predicted_corrected_targets.csv')
-# print(dohlcav_mpnxp_data.head())
+dohlcav_mpnxp_data = pd.read_csv('/lrn/FRC_Bot/FRC-Fourier_Regression_Correction.Bot-API_3.2/predicted_corrected_targets.csv')
+# print(dohlcav_mpnxp_data.tail())
 # sys.exit()
 
 df = pd.DataFrame()
 df['delta'] = dohlcav_mpnxp_data['raw predicted'] / dohlcav_mpnxp_data['actual'] 
+df['date'] = dohlcav_mpnxp_data['date']
 
 # price_mean = df['delta'].mean() # experiment 1 working with mean
 
@@ -121,7 +122,7 @@ def extract_fft_features(prices, top_n_percent=80):
     n = len(prices) 
     fft_values = fft(prices)
     freqs = fftfreq(n)
-    print('Total frequencies : ',len(fft_values))
+    # print('Total frequencies : ',len(fft_values))
     # sys.exit()
     
     amplitudes = np.abs(fft_values) #[:n//2] 
@@ -134,7 +135,7 @@ def extract_fft_features(prices, top_n_percent=80):
     top_freqs = freqs[sorted_indices][:top_n]
     top_amplitudes = amplitudes[sorted_indices][:top_n]
     top_phases = phases[sorted_indices][:top_n]
-    print('Number of dominant frequencies : ',len(top_freqs))
+    # print('Number of dominant frequencies : ',len(top_freqs))
 
     # additional features
     total_energy = np.sum(amplitudes ** 2)
@@ -155,19 +156,36 @@ def extract_fft_features(prices, top_n_percent=80):
 
     return features, fft_values, sorted_indices[:top_n]  # also returns all fft values with top indices
 
+# def reconstruct_signal_from_fft(original_fft, top_indices, n_future=1):
+#     n = len(original_fft)  
+#     t = np.arange(n + n_future) # extend time for predicting
+#     # print("extended_period:",t)
+
+#     reconstructed_signal = np.zeros_like(t, dtype=float)
+#     for index in top_indices:
+#         freq = index / n
+#         amplitude = np.abs(original_fft[index]) / n
+#         phase = np.angle(original_fft[index])
+
+#         reconstructed_signal += amplitude * np.cos(2 * np.pi * freq * t + phase) # x(t)=Acos(2πft+ϕ)
+#         # sys.exit()
+
+#     print("reconstructed signal : ", reconstructed_signal)
+#     print("len reconstructed signal : ",len(reconstructed_signal))
+#     return reconstructed_signal[-n_future:] 
+#     # return reconstructed_signal[:1]
+
 def reconstruct_signal_from_fft(original_fft, top_indices, n_future=1):
-    n = len(original_fft)  
-    t = np.arange(n + n_future) # extend time for predicting
+    n = len(original_fft)
+    extended_fft = np.zeros(n + n_future, dtype=complex)
+    extended_fft[:n] = original_fft  # Copy original FFT coefficients
 
-    reconstructed_signal = np.zeros_like(t, dtype=float)
-    for index in top_indices:
-        freq = index / n
-        amplitude = np.abs(original_fft[index]) / n
-        phase = np.angle(original_fft[index])
+    # Reconstruct the signal using IFFT
+    reconstructed_signal = np.fft.ifft(extended_fft)
+    # print("reconstructed signal : ", reconstructed_signal)
+    # print("len reconstructed signal : ",len(reconstructed_signal))
 
-        reconstructed_signal += amplitude * np.cos(2 * np.pi * freq * t + phase) # x(t)=Acos(2πft+ϕ)
-
-    return reconstructed_signal[-n_future:] 
+    return reconstructed_signal[-n_future:]  # Return extrapolated values
 
 def plot_dominant_frequencies(original_fft, top_indices, n, window_index):
  
@@ -198,18 +216,22 @@ def plot_dominant_frequencies(original_fft, top_indices, n, window_index):
 # - - - - - - x - x - x - x - x - - - - - - - #
 
 window_size = 10  
-fft_features_list = [None] * window_size
+fft_features_list = [0] * window_size
 reconstructed_signals = []
 predicted_values = []
 
 for i in range(window_size, len(df)):  
     window_data = df['delta'].iloc[i - window_size:i].values
 
-    features, fft_values, top_indices = extract_fft_features(window_data)
+    # print('window data: ', window_data)
+    features, fft_values, top_indices = extract_fft_features(window_data, top_n_percent=100)
     fft_features_list.append(features)  
 
     next_value = reconstruct_signal_from_fft(fft_values, top_indices, n_future=1)[0]
     predicted_values.append(next_value)
+    
+    # if i == 15:
+    #     sys.exit()
 
     # if i == 10 : # plot dominant frequencies 
     #     plot_dominant_frequencies(fft_values, top_indices[1:], window_size, i)
@@ -262,22 +284,24 @@ for i in range(window_size, len(df)):
         # plt.close()  # Close the figure to prevent memory leaks
 # sys.exit()
 
-fft_features_df = pd.json_normalize(fft_features_list) # Convert FFT features into a DataFrame
+# fft_features_df = pd.json_normalize(fft_features_list) # Convert FFT features into a DataFrame
 
-df = pd.concat([df.reset_index(drop=True), fft_features_df.reset_index(drop=True)], axis=1)
-df['predicted_next_value'] = [None] * window_size + predicted_values
+# df = pd.concat([df.reset_index(drop=True), fft_features_df.reset_index(drop=True)], axis=1)
+
+df['predicted_next_value'] = [0] * window_size + predicted_values
+# df['predicted_next_value'] = predicted_values + [0] * window_size
 
 print(df.tail())
-df.to_csv('/lrn/fft-analysis/actual_vs_predicted.csv')
+# df.to_csv('/lrn/fft-analysis/actual_vs_predicted.csv')
 # sys.exit()
 
 # Plot the comparison plot between actual and predicted errors
-trend_slope, trend_intercept, trend_r2, dispersion = sir_parameters(df['delta'][1031:1061], predicted_values[1031:1061]) 
-x_index = np.arange(len(df['delta'][1031:1061]))
+trend_slope, trend_intercept, trend_r2, dispersion = sir_parameters(df['delta'][50:100], df['predicted_next_value'][50:100]) 
+x_index = np.arange(len(df['delta'][50:100]))
 # Create the plot
 fig, ax = plt.subplots(figsize=(12, 6))
-sns.lineplot(x=x_index, y=df['delta'][1031:1061], label="Actual", ax=ax)
-sns.lineplot(x=x_index, y=predicted_values[1031:1061], label="Predicted", ax=ax)
+sns.lineplot(x=x_index, y=df['delta'][50:100], label="Actual", ax=ax)
+sns.lineplot(x=x_index, y=df['predicted_next_value'][50:100], label="Predicted", ax=ax)
 
 # Set plot labels and title
 ax.set_xlabel('Index', fontsize=12)
