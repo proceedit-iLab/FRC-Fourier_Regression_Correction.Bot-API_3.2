@@ -178,10 +178,14 @@ def extract_fft_features(prices, top_n_percent=80):
 def reconstruct_signal_from_fft(original_fft, top_indices, n_future=1):
     n = len(original_fft)
     extended_fft = np.zeros(n + n_future, dtype=complex)
-    extended_fft[:n] = original_fft  # Copy original FFT coefficients
+
+    for index in top_indices:
+        extended_fft[index] = original_fft[index]
+
+    # extended_fft[:n] = original_fft  # Copy original FFT coefficients
 
     # Reconstruct the signal using IFFT
-    reconstructed_signal = np.fft.ifft(extended_fft)
+    reconstructed_signal = np.fft.ifft(extended_fft).real
     # print("reconstructed signal : ", reconstructed_signal)
     # print("len reconstructed signal : ",len(reconstructed_signal))
 
@@ -215,21 +219,37 @@ def plot_dominant_frequencies(original_fft, top_indices, n, window_index):
 
 # - - - - - - x - x - x - x - x - - - - - - - #
 
-window_size = 10  
+window_size = 15  
 fft_features_list = [0] * window_size
 reconstructed_signals = []
 predicted_values = []
 
+'''
 for i in range(window_size, len(df)):  
     window_data = df['delta'].iloc[i - window_size:i].values
 
     # print('window data: ', window_data)
-    features, fft_values, top_indices = extract_fft_features(window_data, top_n_percent=100)
+    features, fft_values, top_indices = extract_fft_features(window_data, top_n_percent=80)
     fft_features_list.append(features)  
 
     next_value = reconstruct_signal_from_fft(fft_values, top_indices, n_future=1)[0]
     predicted_values.append(next_value)
-    
+'''
+for i in range(window_size, len(df)):
+    window_data = df['delta'].iloc[i - window_size:i].values
+
+    input_window = list(window_data[:window_size-5])
+    for step in range(6):
+        _, fft_values, top_indices = extract_fft_features(np.array(input_window), top_n_percent=100)
+
+        next_value = reconstruct_signal_from_fft(fft_values, top_indices, n_future=1)[0]
+
+        input_window.append(next_value)
+
+    predicted_values.append(input_window[-1])
+    features, _, _ = extract_fft_features(np.array(window_data[:window_size-5]), top_n_percent=80)
+    fft_features_list.append(features)
+
     # if i == 15:
     #     sys.exit()
 
@@ -296,12 +316,12 @@ print(df.tail())
 # sys.exit()
 
 # Plot the comparison plot between actual and predicted errors
-trend_slope, trend_intercept, trend_r2, dispersion = sir_parameters(df['delta'][50:100], df['predicted_next_value'][50:100]) 
-x_index = np.arange(len(df['delta'][50:100]))
+trend_slope, trend_intercept, trend_r2, dispersion = sir_parameters(df['delta'][400:500], df['predicted_next_value'][400:500]) 
+x_index = np.arange(len(df['delta'][400:500]))
 # Create the plot
 fig, ax = plt.subplots(figsize=(12, 6))
-sns.lineplot(x=x_index, y=df['delta'][50:100], label="Actual", ax=ax)
-sns.lineplot(x=x_index, y=df['predicted_next_value'][50:100], label="Predicted", ax=ax)
+sns.lineplot(x=x_index, y=df['delta'][400:500], label="Actual", ax=ax)
+sns.lineplot(x=x_index, y=df['predicted_next_value'][400:500], label="Predicted", ax=ax)
 
 # Set plot labels and title
 ax.set_xlabel('Index', fontsize=12)
